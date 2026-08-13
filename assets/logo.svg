@@ -1,0 +1,47 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="chatnec logo">
+  <defs>
+    <linearGradient id="hubGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- connecting lines: three platforms in, one agent out -->
+  <g stroke="#CBD5E1" stroke-width="4" stroke-linecap="round" fill="none">
+    <line x1="52" y1="62" x2="108" y2="104"/>
+    <line x1="34" y1="120" x2="100" y2="120"/>
+    <line x1="52" y1="178" x2="108" y2="136"/>
+    <line x1="150" y1="120" x2="192" y2="120"/>
+  </g>
+
+  <!-- platform nodes (left): generic chat-bubble glyphs, no specific brand marks -->
+  <g>
+    <circle cx="52" cy="62" r="20" fill="#F97316"/>
+    <path d="M43 55 h18 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-9 l-6 5 v-5 h-3 a4 4 0 0 1 -4 -4 v-8 a4 4 0 0 1 4 -4 z" fill="#FFFFFF"/>
+  </g>
+  <g>
+    <circle cx="34" cy="120" r="20" fill="#10B981"/>
+    <path d="M25 113 h18 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-9 l-6 5 v-5 h-3 a4 4 0 0 1 -4 -4 v-8 a4 4 0 0 1 4 -4 z" fill="#FFFFFF"/>
+  </g>
+  <g>
+    <circle cx="52" cy="178" r="20" fill="#0EA5E9"/>
+    <path d="M43 171 h18 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-9 l-6 5 v-5 h-3 a4 4 0 0 1 -4 -4 v-8 a4 4 0 0 1 4 -4 z" fill="#FFFFFF"/>
+  </g>
+
+  <!-- agent node (right): abstract node/circuit glyph, framework-agnostic -->
+  <g>
+    <circle cx="192" cy="120" r="20" fill="#334155"/>
+    <circle cx="184" cy="120" r="3" fill="#FFFFFF"/>
+    <circle cx="192" cy="112" r="3" fill="#FFFFFF"/>
+    <circle cx="192" cy="128" r="3" fill="#FFFFFF"/>
+    <circle cx="200" cy="120" r="3" fill="#FFFFFF"/>
+    <path d="M184 120 L192 112 M184 120 L192 128 M192 112 L200 120 M192 128 L200 120" stroke="#FFFFFF" stroke-width="2"/>
+  </g>
+
+  <!-- hub: the connector itself -->
+  <rect x="84" y="84" width="72" height="72" rx="20" fill="url(#hubGradient)"/>
+  <path d="M104 104 h32 a8 8 0 0 1 8 8 v16 a8 8 0 0 1 -8 8 h-17 l-11 9 v-9 h-4 a8 8 0 0 1 -8 -8 v-16 a8 8 0 0 1 8 -8 z" fill="#FFFFFF"/>
+  <circle cx="113" cy="120" r="2.6" fill="#6366F1"/>
+  <circle cx="120" cy="120" r="2.6" fill="#6366F1"/>
+  <circle cx="127" cy="120" r="2.6" fill="#6366F1"/>
+</svg>

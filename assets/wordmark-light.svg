@@ -1,0 +1,14 @@
+<svg width="440" height="120" viewBox="0 0 440 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="chatnec">
+  <defs>
+    <linearGradient id="wmGradientLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="12" width="96" height="96" rx="24" fill="url(#wmGradientLight)"/>
+  <path d="M32 40 h44 a11 11 0 0 1 11 11 v22 a11 11 0 0 1 -11 11 h-23 l-15 12 v-12 h-6 a11 11 0 0 1 -11 -11 v-22 a11 11 0 0 1 11 -11 z" fill="#FFFFFF"/>
+  <circle cx="43.5" cy="62" r="3.4" fill="#6366F1"/>
+  <circle cx="53" cy="62" r="3.4" fill="#6366F1"/>
+  <circle cx="62.5" cy="62" r="3.4" fill="#6366F1"/>
+  <text x="128" y="78" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#0F172A">chatnec</text>
+</svg>

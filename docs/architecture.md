@@ -1,3 +1,5 @@
+[← back to README](../README.md)
+
 # Architecture
 
 ## Message flow

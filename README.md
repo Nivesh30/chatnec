@@ -1,19 +1,45 @@
-# chatnec
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/wordmark-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/wordmark-light.svg">
+    <img alt="chatnec" src="assets/wordmark-light.svg" width="320">
+  </picture>
+</p>
 
-A universal chat connector: one normalized message format, adapters for Slack,
-Telegram, and Microsoft Teams, and a single-function integration point so any
-agent — regardless of framework or language — can be wired up in a few lines.
+<p align="center">
+  One normalized message format. Adapters for Slack, Telegram, and Teams.<br>
+  A single function signature so any agent — any framework, any language — can be wired up in a few lines.
+</p>
 
-```
-Slack ─┐                                   ┌─ your agent (in-process handler)
-Telegram ─┼─▶ chatnec connector (FastAPI) ──┤
-Teams ─┘        normalizes to               └─ or: POST to any HTTP endpoint
-                 UniversalMessage/Reply         (any language, any framework)
-```
+<p align="center">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Node 18+" src="https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram%20%7C%20Teams-6366F1">
+  <img alt="License" src="https://img.shields.io/badge/license-unlicensed-lightgrey">
+</p>
+
+---
+
+## Contents
+
+- [Why](#why)
+- [How it works](#how-it-works)
+- [Demo](#demo)
+- [Quickstart — Python, embedded](#quickstart--python-embedded)
+- [Quickstart — any language, HTTP mode](#quickstart--any-language-http-mode)
+- [Platform support](#platform-support)
+- [Layout](#layout)
+- [Adding a new platform](#adding-a-new-platform)
+- [Tests](#tests)
 
 ## Why
 
-Every chat platform has its own webhook shape, auth scheme, and reply API.
+Every chat platform has its own webhook shape, auth scheme, and reply API —
+Slack signs requests with HMAC, Telegram uses a bot-API secret token, Teams
+signs with a Bot Framework JWT you validate against a JWKS endpoint. An agent
+that wants to run on all three either reimplements this three times or gets
+coupled to one platform's SDK.
+
 chatnec absorbs all of that behind one interface:
 
 - **`UniversalMessage`** — what every adapter normalizes inbound events into.
@@ -21,22 +47,47 @@ chatnec absorbs all of that behind one interface:
 - **`AgentHandler`** — the one function signature your agent needs to implement:
   `async (UniversalMessage) -> str | UniversalReply | None`.
 
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph Platforms["chat platforms"]
+        direction TB
+        Slack
+        Telegram
+        Teams
+    end
+
+    Platforms -- "webhook" --> Connector["chatnec connector<br/>(FastAPI)"]
+    Connector -- "UniversalMessage" --> Agent["your agent<br/>any framework, any language"]
+    Agent -- "UniversalReply" --> Connector
+    Connector -- "platform send API" --> Platforms
+```
+
 Two ways to plug an agent in:
 
-1. **Embedded** — pass your handler straight into `create_app()`. Runs in the
-   same process as the connector. Simplest option for Python agents.
-2. **HTTP** — point the connector at `AGENT_WEBHOOK_URL`. Your agent can then
-   live anywhere, in any language — it just needs to accept a `UniversalMessage`
-   JSON body and return `{"text": "..."}`. This is what the TypeScript SDK
-   (`ts-sdk/`) wraps for Node-based frameworks.
+| | Embedded | HTTP |
+|---|---|---|
+| Where it runs | Same process as the connector | Anywhere — any language, any host |
+| Wiring | `create_app(handler=my_handler)` | `AGENT_MODE=http`, `AGENT_WEBHOOK_URL=...` |
+| Contract | `async (UniversalMessage) -> str \| UniversalReply \| None` | POST body is `UniversalMessage` JSON, response is `{"text": "..."}` |
+| Best for | Python agents, fastest setup | Node/Go/Java/etc. agents, or independent scaling |
+
+The HTTP contract is deliberately the smallest possible surface, one JSON
+request in and one JSON response out, so it never presupposes a framework.
+The [TypeScript SDK](ts-sdk/) is a thin convenience wrapper around that same
+contract for Node.
 
 ## Demo
 
-See [`docs/demo.md`](docs/demo.md) for a captured terminal transcript of the
-full webhook → agent → reply round trip running locally (including
-per-conversation context persisting across turns), plus the test suite passing.
+[`docs/demo.md`](docs/demo.md) has a real captured terminal transcript of the
+full webhook → agent → reply round trip running locally — including
+per-conversation context persisting across turns — plus the test suite
+passing. It uses a stand-in platform adapter so it's reproducible without
+registering real bot credentials first; the code path exercised is identical
+to the one the real Slack/Telegram/Teams adapters run.
 
-## Quickstart (Python, embedded)
+## Quickstart — Python, embedded
 
 ```bash
 cd python
@@ -60,14 +111,15 @@ uvicorn examples.embedded_mode:app --reload
 ```
 
 Point the platform's webhook at `https://<your-host>/webhook/<platform>`
-(`slack`, `telegram`, or `teams`) — see comments in `python/env.example` for
-per-platform setup notes.
+(`slack`, `telegram`, or `teams`) — see the comments in
+[`python/env.example`](python/env.example) for per-platform setup notes.
 
-Wiring an existing framework (LangChain shown, same pattern for CrewAI, AutoGen,
-OpenAI Assistants, etc.) — see `python/chatnec/integrations/langchain.py` and
-`python/examples/langchain_agent.py`.
+Wiring an existing framework — LangChain shown, same pattern for CrewAI,
+AutoGen, OpenAI Assistants, etc. — see
+[`chatnec/integrations/langchain.py`](python/chatnec/integrations/langchain.py)
+and [`examples/langchain_agent.py`](python/examples/langchain_agent.py).
 
-## Quickstart (any language, HTTP mode)
+## Quickstart — any language, HTTP mode
 
 Run the connector standalone:
 
@@ -76,7 +128,7 @@ AGENT_MODE=http AGENT_WEBHOOK_URL=http://localhost:9000/agent \
   uvicorn examples.standalone_service:app --reload
 ```
 
-And your agent, in whatever language/framework you like, just needs to answer
+Your agent, in whatever language or framework you like, just needs to answer
 POSTs with `{"text": "..."}`. For Node.js, the TS SDK does this for you:
 
 ```ts
@@ -87,17 +139,25 @@ createAgentServer(async (message) => {
 }, { port: 9000 });
 ```
 
+## Platform support
+
+| Platform | Auth | Inbound verification | Notes |
+|---|---|---|---|
+| Slack | Bot token + signing secret | HMAC-SHA256 request signature | Handles the `url_verification` handshake automatically |
+| Telegram | Bot token | Optional webhook secret token | Includes a `register_webhook()` helper |
+| Teams | Bot Framework app ID/password | Bot Framework JWT validated against JWKS | OAuth2 client-credentials token cached for outbound sends |
+
 ## Layout
 
 ```
 python/chatnec/
-  models.py          UniversalMessage, UniversalReply, AgentHandler
-  adapters/           slack.py, telegram.py, teams.py, base.py (add new platforms here)
-  agent_connector.py  embedded vs HTTP dispatch to your agent
-  server.py           FastAPI app: /webhook/{platform}, /reply, /health
-  integrations/       from_function (generic), from_langchain_runnable (example)
-  session.py          per-conversation state store (in-memory by default, pluggable)
-ts-sdk/src/           createAgentServer + ChatConnectorClient for Node agents
+  models.py            UniversalMessage, UniversalReply, AgentHandler
+  adapters/             slack.py, telegram.py, teams.py, base.py (add new platforms here)
+  agent_connector.py    embedded vs HTTP dispatch to your agent
+  server.py             FastAPI app: /webhook/{platform}, /reply, /health
+  integrations/         from_function (generic), from_langchain_runnable (example)
+  session.py            per-conversation state store (in-memory by default, pluggable)
+ts-sdk/src/              createAgentServer + ChatConnectorClient for Node agents
 ```
 
 ## Adding a new platform

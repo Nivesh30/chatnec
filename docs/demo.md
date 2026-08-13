@@ -1,3 +1,5 @@
+[← back to README](../README.md)
+
 # Demo: it working, end to end
 
 This is a real captured transcript of the connector running locally — no mocked
