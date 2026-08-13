@@ -7,17 +7,24 @@ Configure via environment variables (see chatnec.config.Settings) or by building
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from .adapters.base import PlatformAdapter
+from .adapters.discord import DiscordAdapter
 from .adapters.slack import SlackAdapter
 from .adapters.teams import TeamsAdapter
 from .adapters.telegram import TelegramAdapter
+from .adapters.whatsapp import WhatsAppAdapter
 from .agent_connector import EmbeddedAgentConnector, HTTPAgentConnector
 from .config import settings
+from .logging_config import configure_logging
+from .metrics import metrics
 from .models import AgentHandler, UniversalReply
 
 logger = logging.getLogger("chatnec")
@@ -34,7 +41,7 @@ def create_app(
     - `adapters`: override which platform adapters are active. If omitted, adapters
       are built from environment settings (only platforms with credentials set are enabled).
     """
-    app = FastAPI(title="chatnec", version="0.1.0")
+    configure_logging(settings.log_level, json_format=settings.log_format == "json")
 
     active_adapters = adapters if adapters is not None else _build_adapters_from_settings()
     if not active_adapters:
@@ -47,40 +54,42 @@ def create_app(
     else:
         connector = None  # agent will push replies asynchronously via POST /reply
 
+    push_adapters = {name: a for name, a in active_adapters.items() if a.is_push_adapter}
+    webhook_adapters = {name: a for name, a in active_adapters.items() if not a.is_push_adapter}
+    push_tasks: list[asyncio.Task] = []
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        for name, adapter in push_adapters.items():
+            logger.info("chatnec: starting push adapter '%s'", name)
+            push_tasks.append(asyncio.create_task(_run_push_adapter(name, adapter, connector)))
+        yield
+        for adapter in push_adapters.values():
+            await adapter.stop_listening()
+        for task in push_tasks:
+            task.cancel()
+
+    app = FastAPI(title="chatnec", version="0.1.0", lifespan=lifespan)
+
     app.state.adapters = active_adapters
     app.state.connector = connector
 
     @app.post("/webhook/{platform}")
-    async def webhook(platform: str, request: Request):
-        adapter = active_adapters.get(platform)
+    async def webhook_post(platform: str, request: Request):
+        return await _handle_webhook(platform, request, webhook_adapters, connector)
+
+    @app.get("/webhook/{platform}")
+    async def webhook_get(platform: str, request: Request):
+        """Some platforms verify a webhook with a GET handshake (e.g. WhatsApp's
+        hub.challenge) rather than the POST used for actual events."""
+        adapter = webhook_adapters.get(platform)
         if adapter is None:
             raise HTTPException(status_code=404, detail=f"No adapter configured for '{platform}'")
 
-        body = await request.body()
-
-        handshake_response = await adapter.handle_handshake(request, body)
-        if handshake_response is not None:
-            return handshake_response
-
-        if not await adapter.verify_webhook(request, body):
-            raise HTTPException(status_code=401, detail="Webhook verification failed")
-
-        messages = await adapter.parse_webhook(request)
-
-        if connector is None:
-            # No agent wired up — caller is responsible for consuming messages some other way.
-            return {"received": len(messages)}
-
-        for message in messages:
-            try:
-                reply = await connector.handle(message)
-            except Exception:
-                logger.exception("Agent handler failed for message %s", message.id)
-                continue
-            if reply is not None:
-                await adapter.send_message(reply)
-
-        return {"received": len(messages)}
+        response = await adapter.handle_handshake(request, b"")
+        if response is not None:
+            return response
+        raise HTTPException(status_code=404)
 
     @app.post("/reply")
     async def reply(payload: UniversalReply, x_api_key: Optional[str] = Header(default=None)):
@@ -96,13 +105,81 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"No adapter configured for '{payload.platform}'")
 
         await adapter.send_message(payload)
+        metrics.inc("replies_sent_total", payload.platform)
         return {"ok": True}
 
     @app.get("/health")
     async def health():
         return {"status": "ok", "platforms": list(active_adapters.keys())}
 
+    @app.get("/metrics")
+    async def metrics_endpoint():
+        return PlainTextResponse(metrics.render_prometheus())
+
     return app
+
+
+async def _handle_webhook(
+    platform: str,
+    request: Request,
+    webhook_adapters: dict[str, PlatformAdapter],
+    connector,
+):
+    adapter = webhook_adapters.get(platform)
+    if adapter is None:
+        raise HTTPException(status_code=404, detail=f"No adapter configured for '{platform}'")
+
+    body = await request.body()
+
+    handshake_response = await adapter.handle_handshake(request, body)
+    if handshake_response is not None:
+        return handshake_response
+
+    if not await adapter.verify_webhook(request, body):
+        raise HTTPException(status_code=401, detail="Webhook verification failed")
+
+    messages = await adapter.parse_webhook(request)
+
+    for message in messages:
+        await _handle_message(message, adapter, connector)
+
+    return {"received": len(messages)}
+
+
+async def _handle_message(message, adapter: Optional[PlatformAdapter], connector) -> Optional[UniversalReply]:
+    metrics.inc("messages_received_total", message.platform)
+    logger.info(
+        "chatnec: message received",
+        extra={"chatnec_platform": message.platform, "chatnec_chat_id": message.chat_id},
+    )
+
+    if connector is None:
+        return None  # no agent wired up — caller consumes messages some other way
+
+    try:
+        reply = await connector.handle(message)
+    except Exception:
+        metrics.inc("agent_errors_total", message.platform)
+        logger.exception("chatnec: agent handler failed for message %s", message.id)
+        return None
+
+    if reply is not None and adapter is not None:
+        await adapter.send_message(reply)
+        metrics.inc("replies_sent_total", message.platform)
+
+    return reply
+
+
+async def _run_push_adapter(name: str, adapter: PlatformAdapter, connector) -> None:
+    async def handle(message):
+        return await _handle_message(message, adapter, connector)
+
+    try:
+        await adapter.start_listening(handle)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("chatnec: push adapter '%s' crashed", name)
 
 
 def _build_adapters_from_settings() -> dict[str, PlatformAdapter]:
@@ -116,6 +193,17 @@ def _build_adapters_from_settings() -> dict[str, PlatformAdapter]:
 
     if settings.teams_app_id and settings.teams_app_password:
         adapters["teams"] = TeamsAdapter(settings.teams_app_id, settings.teams_app_password)
+
+    if settings.whatsapp_access_token and settings.whatsapp_phone_number_id:
+        adapters["whatsapp"] = WhatsAppAdapter(
+            settings.whatsapp_access_token,
+            settings.whatsapp_phone_number_id,
+            settings.whatsapp_app_secret,
+            settings.whatsapp_verify_token,
+        )
+
+    if settings.discord_bot_token:
+        adapters["discord"] = DiscordAdapter(settings.discord_bot_token)
 
     return adapters
 

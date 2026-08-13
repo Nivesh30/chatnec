@@ -6,12 +6,11 @@ satisfies chatnec's AgentHandler signature, handling both sync and async functio
 """
 from __future__ import annotations
 
-import asyncio
 import inspect
 from typing import Any, Awaitable, Callable, Union
 
 from ..models import AgentHandler, UniversalMessage
-from ..session import InMemorySessionStore, SessionStore, conversation_key
+from ..session import SessionStore, conversation_key, default_session_store
 
 SimpleFn = Callable[[str], Union[str, Awaitable[str]]]
 ContextFn = Callable[[str, dict[str, Any]], Union[str, Awaitable[str]]]
@@ -26,8 +25,11 @@ def from_function(
     `context` (if your function accepts a second argument) is a dict with the
     conversation's stored state plus platform/user metadata — mutate it and it's
     persisted for the next turn in the same conversation.
+
+    Session state defaults to Redis when REDIS_URL is set in the environment,
+    otherwise in-memory (see chatnec.session.default_session_store).
     """
-    store = session_store or InMemorySessionStore()
+    store = session_store or default_session_store()
     takes_context = len(inspect.signature(fn).parameters) >= 2
 
     async def handler(message: UniversalMessage) -> str:

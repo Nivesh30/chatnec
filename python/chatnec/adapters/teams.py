@@ -17,6 +17,7 @@ import httpx
 from fastapi import Request
 
 from ..models import UniversalMessage, UniversalReply
+from ..retry import send_with_retry
 from .base import PlatformAdapter
 
 LOGIN_URL = "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token"
@@ -138,7 +139,7 @@ class TeamsAdapter(PlatformAdapter):
             "replyToId": reply.metadata.get("reply_to_id"),
         }
         url = f"{service_url.rstrip('/')}/v3/conversations/{reply.chat_id}/activities"
-        resp = await self._client.post(
-            url, json=activity, headers={"Authorization": f"Bearer {token}"}
+        resp = await send_with_retry(
+            lambda: self._client.post(url, json=activity, headers={"Authorization": f"Bearer {token}"})
         )
         resp.raise_for_status()

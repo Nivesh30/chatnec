@@ -3,15 +3,15 @@
 </p>
 
 <p align="center">
-  One normalized message format. Adapters for Slack, Telegram, and Teams.<br>
+  One normalized message format. Adapters for Slack, Telegram, Teams, WhatsApp, and Discord.<br>
   A single function signature so any agent — any framework, any language — can be wired up in a few lines.
 </p>
 
 <p align="center">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white">
   <img alt="Node 18+" src="https://img.shields.io/badge/node-18%2B-339933?logo=node.js&logoColor=white">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram%20%7C%20Teams-6366F1">
-  <img alt="License" src="https://img.shields.io/badge/license-unlicensed-lightgrey">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Slack%20%7C%20Telegram%20%7C%20Teams%20%7C%20WhatsApp%20%7C%20Discord-6366F1">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-6366F1">
 </p>
 
 ---
@@ -21,9 +21,12 @@
 - [Why](#why)
 - [How it works](#how-it-works)
 - [Demo](#demo)
+- [Quickstart — scaffold a project](#quickstart--scaffold-a-project)
 - [Quickstart — Python, embedded](#quickstart--python-embedded)
 - [Quickstart — any language, HTTP mode](#quickstart--any-language-http-mode)
 - [Platform support](#platform-support)
+- [Framework examples](#framework-examples)
+- [Production](#production)
 - [Layout](#layout)
 - [Adding a new platform](#adding-a-new-platform)
 - [Tests](#tests)
@@ -32,9 +35,10 @@
 
 Every chat platform has its own webhook shape, auth scheme, and reply API —
 Slack signs requests with HMAC, Telegram uses a bot-API secret token, Teams
-signs with a Bot Framework JWT you validate against a JWKS endpoint. An agent
-that wants to run on all three either reimplements this three times or gets
-coupled to one platform's SDK.
+signs with a Bot Framework JWT you validate against a JWKS endpoint, Discord
+doesn't have inbound webhooks for messages at all (it's a persistent Gateway
+connection). An agent that wants to run on all of them either reimplements
+this five times or gets coupled to one platform's SDK.
 
 chatnec absorbs all of that behind one interface:
 
@@ -52,9 +56,11 @@ flowchart LR
         Slack
         Telegram
         Teams
+        WhatsApp
+        Discord
     end
 
-    Platforms -- "webhook" --> Connector["chatnec connector<br/>(FastAPI)"]
+    Platforms -- "webhook / gateway" --> Connector["chatnec connector<br/>(FastAPI)"]
     Connector -- "UniversalMessage" --> Agent["your agent<br/>any framework, any language"]
     Agent -- "UniversalReply" --> Connector
     Connector -- "platform send API" --> Platforms
@@ -81,14 +87,28 @@ full webhook → agent → reply round trip running locally — including
 per-conversation context persisting across turns — plus the test suite
 passing. It uses a stand-in platform adapter so it's reproducible without
 registering real bot credentials first; the code path exercised is identical
-to the one the real Slack/Telegram/Teams adapters run.
+to the one the real platform adapters run.
+
+## Quickstart — scaffold a project
+
+```bash
+pip install chatnec
+chatnec init my-agent
+cd my-agent
+cp .env.example .env   # fill in credentials for the platform(s) you're using
+uvicorn app:app --reload
+```
+
+`chatnec init` writes a starter `app.py` (an echo agent wired to every platform
+you configure) plus an `.env.example` and `.gitignore` — edit one function to
+call your real agent.
 
 ## Quickstart — Python, embedded
 
 ```bash
 cd python
 pip install -e .
-cp env.example .env   # fill in TELEGRAM_BOT_TOKEN and/or SLACK_*/TEAMS_*
+cp env.example .env   # fill in TELEGRAM_BOT_TOKEN and/or SLACK_*/TEAMS_*/WHATSAPP_*/DISCORD_*
 ```
 
 ```python
@@ -107,13 +127,9 @@ uvicorn examples.embedded_mode:app --reload
 ```
 
 Point the platform's webhook at `https://<your-host>/webhook/<platform>`
-(`slack`, `telegram`, or `teams`) — see the comments in
-[`python/env.example`](python/env.example) for per-platform setup notes.
-
-Wiring an existing framework — LangChain shown, same pattern for CrewAI,
-AutoGen, OpenAI Assistants, etc. — see
-[`chatnec/integrations/langchain.py`](python/chatnec/integrations/langchain.py)
-and [`examples/langchain_agent.py`](python/examples/langchain_agent.py).
+(`slack`, `telegram`, `teams`, or `whatsapp` — Discord connects itself, see
+below) — see the comments in [`python/env.example`](python/env.example) for
+per-platform setup notes.
 
 ## Quickstart — any language, HTTP mode
 
@@ -137,22 +153,55 @@ createAgentServer(async (message) => {
 
 ## Platform support
 
-| Platform | Auth | Inbound verification | Notes |
+| Platform | Auth | Inbound | Notes |
 |---|---|---|---|
-| Slack | Bot token + signing secret | HMAC-SHA256 request signature | Handles the `url_verification` handshake automatically |
-| Telegram | Bot token | Optional webhook secret token | Includes a `register_webhook()` helper |
-| Teams | Bot Framework app ID/password | Bot Framework JWT validated against JWKS | OAuth2 client-credentials token cached for outbound sends |
+| Slack | Bot token + signing secret | Webhook, HMAC-SHA256 signature | Handles the `url_verification` handshake automatically |
+| Telegram | Bot token | Webhook, optional secret token | Includes a `register_webhook()` helper |
+| Teams | Bot Framework app ID/password | Webhook, Bot Framework JWT validated against JWKS | OAuth2 client-credentials token cached for outbound sends |
+| WhatsApp | Meta Cloud API access token | Webhook, HMAC-SHA256 signature + GET handshake | `pip install chatnec` (no extra needed) |
+| Discord | Bot token | Gateway (persistent connection, not a webhook) | `pip install chatnec[discord]`; requires the Message Content privileged intent |
+
+All outbound sends retry on 429/5xx with exponential backoff (honoring
+`Retry-After`) — see [`chatnec/retry.py`](python/chatnec/retry.py).
+
+## Framework examples
+
+Same five-line pattern for any framework — call it, return text:
+
+- [LangChain](python/examples/langchain_agent.py) / [`from_langchain_runnable`](python/chatnec/integrations/langchain.py)
+- [CrewAI](python/examples/crewai_agent.py)
+- [AutoGen](python/examples/autogen_agent.py)
+- [OpenAI Assistants](python/examples/openai_assistants_agent.py)
+
+## Production
+
+- **Docker**: `docker build -t chatnec python/` or `docker compose up` (starts
+  the connector + Redis — see [`docker-compose.yml`](docker-compose.yml))
+- **Session state**: in-memory by default; set `REDIS_URL` to switch to
+  `RedisSessionStore` so conversation state survives restarts and is shared
+  across processes (`pip install chatnec[redis]`)
+- **Metrics**: `GET /metrics` in Prometheus text format — messages received,
+  replies sent, and agent errors, labeled by platform
+- **Logging**: structured JSON to stdout by default (`LOG_FORMAT=text` for
+  plain-text logs; `LOG_LEVEL` to adjust verbosity)
+- **CI**: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the
+  Python test suite, builds the TS SDK, and builds the Docker image on every
+  push/PR
 
 ## Layout
 
 ```
 python/chatnec/
   models.py            UniversalMessage, UniversalReply, AgentHandler
-  adapters/             slack.py, telegram.py, teams.py, base.py (add new platforms here)
+  adapters/             slack.py, telegram.py, teams.py, whatsapp.py, discord.py, base.py (add new platforms here)
   agent_connector.py    embedded vs HTTP dispatch to your agent
-  server.py             FastAPI app: /webhook/{platform}, /reply, /health
+  server.py             FastAPI app: /webhook/{platform}, /reply, /health, /metrics
   integrations/         from_function (generic), from_langchain_runnable (example)
-  session.py            per-conversation state store (in-memory by default, pluggable)
+  session.py            per-conversation state (in-memory or Redis)
+  retry.py              backoff for outbound platform API calls
+  metrics.py            Prometheus-format counters
+  logging_config.py     structured JSON logging
+  cli.py                `chatnec init` project scaffolding
 ts-sdk/src/              createAgentServer + ChatConnectorClient for Node agents
 ```
 
@@ -160,7 +209,9 @@ ts-sdk/src/              createAgentServer + ChatConnectorClient for Node agents
 
 Subclass `chatnec.adapters.base.PlatformAdapter` and implement `parse_webhook`
 and `send_message`; register it in `_build_adapters_from_settings()` in
-`server.py` (or just pass `adapters={...}` to `create_app()` directly). See
+`server.py` (or just pass `adapters={...}` to `create_app()` directly). For a
+platform with no inbound webhook (like Discord), set `is_push_adapter = True`
+and implement `start_listening()` instead. See
 [`docs/architecture.md`](docs/architecture.md) for the full message flow and
 design rationale.
 
@@ -169,3 +220,7 @@ design rationale.
 ```bash
 cd python && pytest
 ```
+
+## License
+
+[MIT](LICENSE)

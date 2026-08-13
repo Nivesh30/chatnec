@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     teams_app_id: Optional[str] = None
     teams_app_password: Optional[str] = None
 
+    # --- WhatsApp (Meta Cloud API) ---
+    whatsapp_access_token: Optional[str] = None
+    whatsapp_phone_number_id: Optional[str] = None
+    whatsapp_app_secret: Optional[str] = None
+    whatsapp_verify_token: Optional[str] = None
+
+    # --- Discord (Gateway, push-style — see adapters/discord.py) ---
+    discord_bot_token: Optional[str] = None
+
     # --- Agent integration ---
     # "embedded": handler runs in this same process (see chatnec.embed)
     # "http": connector POSTs each UniversalMessage to agent_webhook_url and expects a reply
@@ -29,6 +38,15 @@ class Settings(BaseSettings):
 
     # Shared secret the connector expects on inbound /reply calls when agents reply asynchronously.
     reply_api_key: Optional[str] = None
+
+    # --- Session state ---
+    # If set, chatnec.session.default_session_store() returns a RedisSessionStore
+    # instead of the in-memory default (needed once you run more than one process).
+    redis_url: Optional[str] = None
+
+    # --- Observability ---
+    log_level: str = "INFO"
+    log_format: Literal["json", "text"] = "json"
 
 
 settings = Settings()

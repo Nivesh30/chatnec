@@ -7,6 +7,7 @@ import httpx
 from fastapi import Request
 
 from ..models import UniversalMessage, UniversalReply
+from ..retry import send_with_retry
 from .base import PlatformAdapter
 
 
@@ -52,7 +53,7 @@ class TelegramAdapter(PlatformAdapter):
         body: dict = {"chat_id": reply.chat_id, "text": reply.text}
         if reply.thread_id:
             body["message_thread_id"] = int(reply.thread_id)
-        resp = await self._client.post("/sendMessage", json=body)
+        resp = await send_with_retry(lambda: self._client.post("/sendMessage", json=body))
         resp.raise_for_status()
         data = resp.json()
         if not data.get("ok"):

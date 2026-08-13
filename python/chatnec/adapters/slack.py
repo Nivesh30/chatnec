@@ -10,6 +10,7 @@ import httpx
 from fastapi import Request, Response
 
 from ..models import Attachment, UniversalMessage, UniversalReply
+from ..retry import send_with_retry
 from .base import PlatformAdapter
 
 SLACK_API_BASE = "https://slack.com/api"
@@ -86,7 +87,7 @@ class SlackAdapter(PlatformAdapter):
         body = {"channel": reply.chat_id, "text": reply.text}
         if reply.thread_id:
             body["thread_ts"] = reply.thread_id
-        resp = await self._client.post("/chat.postMessage", json=body)
+        resp = await send_with_retry(lambda: self._client.post("/chat.postMessage", json=body))
         resp.raise_for_status()
         data = resp.json()
         if not data.get("ok"):
