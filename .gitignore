@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Node
+node_modules/
+ts-sdk/dist/
+
+# Env / secrets
+.env
+*.env
+!env.example
+
+# OS
+.DS_Store
+Thumbs.db
