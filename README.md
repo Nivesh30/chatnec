@@ -1,9 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/wordmark-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/wordmark-light.svg">
-    <img alt="chatnec" src="assets/wordmark-light.svg" width="320">
-  </picture>
+  <img alt="chatnec" src="assets/wordmark.svg" width="320">
 </p>
 
 <p align="center">
