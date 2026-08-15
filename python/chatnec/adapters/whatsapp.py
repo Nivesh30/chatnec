@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from typing import Optional
 
 import httpx
@@ -17,6 +18,8 @@ from fastapi import Request, Response
 from ..models import UniversalMessage, UniversalReply
 from ..retry import send_with_retry
 from .base import PlatformAdapter
+
+logger = logging.getLogger("chatnec")
 
 GRAPH_API_BASE = "https://graph.facebook.com/v20.0"
 
@@ -35,6 +38,11 @@ class WhatsAppAdapter(PlatformAdapter):
         self.phone_number_id = phone_number_id
         self.app_secret = app_secret
         self.verify_token = verify_token
+        if not app_secret:
+            logger.warning(
+                "chatnec: WhatsAppAdapter has no app_secret configured — "
+                "/webhook/whatsapp will reject all requests until WHATSAPP_APP_SECRET is set"
+            )
         self._client = httpx.AsyncClient(
             base_url=GRAPH_API_BASE,
             headers={"Authorization": f"Bearer {access_token}"},
@@ -43,7 +51,10 @@ class WhatsAppAdapter(PlatformAdapter):
 
     async def verify_webhook(self, request: Request, body: bytes) -> bool:
         if not self.app_secret:
-            return True
+            # Fail closed: an unsigned/unverifiable webhook must never be treated as
+            # authentic, since it drives the agent pipeline and outbound sends using
+            # this bot's real credentials.
+            return False
 
         signature = request.headers.get("X-Hub-Signature-256", "")
         if not signature.startswith("sha256="):

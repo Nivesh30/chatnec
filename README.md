@@ -26,6 +26,7 @@
 - [Quickstart — any language, HTTP mode](#quickstart--any-language-http-mode)
 - [Platform support](#platform-support)
 - [Framework examples](#framework-examples)
+- [Security](#security)
 - [Production](#production)
 - [Layout](#layout)
 - [Adding a new platform](#adding-a-new-platform)
@@ -155,11 +156,20 @@ createAgentServer(async (message) => {
 
 | Platform | Auth | Inbound | Notes |
 |---|---|---|---|
-| Slack | Bot token + signing secret | Webhook, HMAC-SHA256 signature | Handles the `url_verification` handshake automatically |
+| Slack | Bot token + signing secret | Webhook, HMAC-SHA256 signature (**required**) | Handles the `url_verification` handshake automatically |
 | Telegram | Bot token | Webhook, optional secret token | Includes a `register_webhook()` helper |
 | Teams | Bot Framework app ID/password | Webhook, Bot Framework JWT validated against JWKS | OAuth2 client-credentials token cached for outbound sends |
-| WhatsApp | Meta Cloud API access token | Webhook, HMAC-SHA256 signature + GET handshake | `pip install chatnec` (no extra needed) |
+| WhatsApp | Meta Cloud API access token | Webhook, HMAC-SHA256 signature (**required**) + GET handshake | `pip install chatnec` (no extra needed) |
 | Discord | Bot token | Gateway (persistent connection, not a webhook) | `pip install chatnec[discord]`; requires the Message Content privileged intent |
+
+**Slack and WhatsApp fail closed**: if `SLACK_SIGNING_SECRET` / `WHATSAPP_APP_SECRET`
+isn't set, that adapter's webhook rejects every request rather than silently
+accepting unverified traffic — a webhook driving your agent (and outbound
+sends using your bot's real credentials) must never be trusted without a
+working signature check. Telegram's secret token is genuinely optional
+because Telegram itself doesn't offer per-request signing — the token is a
+shared secret you choose and paste into both Telegram's `setWebhook` call and
+your `.env`.
 
 All outbound sends retry on 429/5xx with exponential backoff (honoring
 `Retry-After`) — see [`chatnec/retry.py`](python/chatnec/retry.py).
@@ -172,6 +182,27 @@ Same five-line pattern for any framework — call it, return text:
 - [CrewAI](python/examples/crewai_agent.py)
 - [AutoGen](python/examples/autogen_agent.py)
 - [OpenAI Assistants](python/examples/openai_assistants_agent.py)
+
+## Security
+
+Every inbound webhook drives your agent and can trigger an outbound send using
+your bot's real credentials, so verification failing closed (rejecting when
+misconfigured, rather than silently accepting) is the default posture:
+
+- **Slack / WhatsApp**: webhook signature verification is mandatory. If
+  `SLACK_SIGNING_SECRET` / `WHATSAPP_APP_SECRET` isn't set, that platform's
+  webhook rejects every request rather than accepting unverified traffic — you
+  won't get a silently-open endpoint from a forgotten env var.
+- **Teams**: JWT validation against the Bot Framework's JWKS is on by default
+  (`verify_jwt=True`); turn it off only for local testing against the Bot
+  Framework Emulator.
+- **`POST /reply`** (for agents pushing replies back asynchronously) requires
+  `REPLY_API_KEY` to be set — the endpoint returns `503` until it is, rather
+  than accepting unauthenticated requests that could send arbitrary messages
+  as your bot.
+
+If you find a security issue, please open an issue rather than a public PR
+with exploit details.
 
 ## Production
 

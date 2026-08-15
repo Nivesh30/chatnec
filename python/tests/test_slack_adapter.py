@@ -50,3 +50,20 @@ async def test_verify_webhook_rejects_bad_signature():
     )
 
     assert await adapter.verify_webhook(request, body) is False
+
+
+@pytest.mark.asyncio
+async def test_verify_webhook_fails_closed_when_no_secret_configured():
+    adapter = SlackAdapter(bot_token="xoxb-fake")  # no signing_secret
+    body = b'{"type":"event_callback"}'
+    timestamp = str(int(time.time()))
+    base = f"v0:{timestamp}:{body.decode()}".encode()
+    # Even a signature that *would* be valid for some other secret must not pass —
+    # there's nothing to verify it against.
+    signature = "v0=" + hmac.new(b"some-secret", base, hashlib.sha256).hexdigest()
+    request = _make_request(
+        body,
+        {"X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature},
+    )
+
+    assert await adapter.verify_webhook(request, body) is False

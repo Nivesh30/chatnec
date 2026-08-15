@@ -30,6 +30,8 @@ app = create_app(handler=from_function(my_agent))
 ENV_TEMPLATE = """# Fill in credentials for the platforms you're using — an unset platform is
 # simply inactive. See https://github.com/Nivesh30/chatnec for setup notes.
 
+# SLACK_SIGNING_SECRET is required, not optional — without it /webhook/slack
+# rejects every request.
 SLACK_BOT_TOKEN=
 SLACK_SIGNING_SECRET=
 
@@ -38,6 +40,8 @@ TELEGRAM_BOT_TOKEN=
 TEAMS_APP_ID=
 TEAMS_APP_PASSWORD=
 
+# WHATSAPP_APP_SECRET is required, not optional — without it /webhook/whatsapp
+# rejects every request.
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_PHONE_NUMBER_ID=
 WHATSAPP_APP_SECRET=
@@ -46,6 +50,10 @@ WHATSAPP_VERIFY_TOKEN=
 DISCORD_BOT_TOKEN=
 
 REDIS_URL=
+
+# Required to use POST /reply (async agent replies) — the endpoint refuses all
+# requests until this is set, and then requires it as the X-API-Key header.
+REPLY_API_KEY=
 """
 
 README_TEMPLATE = """# {name}

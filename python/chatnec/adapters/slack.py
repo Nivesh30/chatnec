@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import time
 from typing import Optional
 
@@ -13,6 +14,8 @@ from ..models import Attachment, UniversalMessage, UniversalReply
 from ..retry import send_with_retry
 from .base import PlatformAdapter
 
+logger = logging.getLogger("chatnec")
+
 SLACK_API_BASE = "https://slack.com/api"
 
 
@@ -22,6 +25,11 @@ class SlackAdapter(PlatformAdapter):
     def __init__(self, bot_token: str, signing_secret: Optional[str] = None) -> None:
         self.bot_token = bot_token
         self.signing_secret = signing_secret
+        if not signing_secret:
+            logger.warning(
+                "chatnec: SlackAdapter has no signing_secret configured — "
+                "/webhook/slack will reject all requests until SLACK_SIGNING_SECRET is set"
+            )
         self._client = httpx.AsyncClient(
             base_url=SLACK_API_BASE,
             headers={"Authorization": f"Bearer {bot_token}"},
@@ -30,7 +38,10 @@ class SlackAdapter(PlatformAdapter):
 
     async def verify_webhook(self, request: Request, body: bytes) -> bool:
         if not self.signing_secret:
-            return True  # verification disabled if no secret configured
+            # Fail closed: an unsigned/unverifiable webhook must never be treated as
+            # authentic, since it drives the agent pipeline and outbound sends using
+            # this bot's real credentials.
+            return False
 
         timestamp = request.headers.get("X-Slack-Request-Timestamp")
         signature = request.headers.get("X-Slack-Signature")

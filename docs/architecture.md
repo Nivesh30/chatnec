@@ -96,13 +96,32 @@ single dev process, lost on restart). Implement the three-method
   default (`LOG_FORMAT=text` for plain text), configured once in
   `create_app()` from `LOG_LEVEL`/`LOG_FORMAT`.
 
+## Webhook verification fails closed
+
+`server.py` genuinely enforces `PlatformAdapter.verify_webhook()` — a `False`
+return is a `401`, not advisory. `SlackAdapter` and `WhatsAppAdapter` return
+`False` (reject) when their signing secret isn't configured, rather than the
+more permissive "accept everything, verification is opt-in" default a generic
+`PlatformAdapter` base class uses. That distinction matters here specifically:
+Slack and WhatsApp are documented, internet-facing webhook receivers by
+design, and a webhook silently accepted without verification feeds directly
+into the agent pipeline and can trigger outbound sends using the bot's real
+credentials — a misconfiguration (bot token set, signing secret forgotten)
+should produce a loud, obvious failure (every webhook request 401s, logged at
+startup) rather than a silent authentication bypass. `TeamsAdapter` defaults
+`verify_jwt=True` for the same reason; it's only meant to be disabled for
+local testing against the Bot Framework Emulator.
+
 ## Async replies
 
 Some agents do long-running work and can't reply synchronously within the
 webhook response (or, for Discord, within the Gateway event handler). `POST
-/reply` (optionally behind `REPLY_API_KEY`) lets an agent push a
-`UniversalReply` back at any later time, and the connector routes it through
-the correct platform adapter's `send_message`.
+/reply` lets an agent push a `UniversalReply` back at any later time, and the
+connector routes it through the correct platform adapter's `send_message`.
+This endpoint requires `REPLY_API_KEY` — unlike per-platform webhook
+verification, there's no way to derive an equivalent signature check for an
+arbitrary caller, so the fail-closed behavior here is simpler: no key
+configured means the endpoint is off (`503`), not open.
 
 ## Adding a platform
 

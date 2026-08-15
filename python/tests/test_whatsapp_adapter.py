@@ -45,6 +45,16 @@ async def test_verify_webhook_rejects_bad_signature():
 
 
 @pytest.mark.asyncio
+async def test_verify_webhook_fails_closed_when_no_secret_configured():
+    adapter = WhatsAppAdapter(access_token="t", phone_number_id="p")  # no app_secret
+    body = b'{"object":"whatsapp_business_account"}'
+    signature = "sha256=" + hmac.new(b"some-secret", body, hashlib.sha256).hexdigest()
+    request = _make_request(body, {"X-Hub-Signature-256": signature})
+
+    assert await adapter.verify_webhook(request, body) is False
+
+
+@pytest.mark.asyncio
 async def test_handshake_returns_challenge_on_valid_verify_token():
     adapter = WhatsAppAdapter(access_token="t", phone_number_id="p", verify_token="secret-token")
     query = b"hub.mode=subscribe&hub.verify_token=secret-token&hub.challenge=12345"

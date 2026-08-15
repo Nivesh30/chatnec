@@ -97,7 +97,11 @@ def create_app(
         (e.g. after long-running work), instead of returning it synchronously
         from its webhook response.
         """
-        if settings.reply_api_key and x_api_key != settings.reply_api_key:
+        if not settings.reply_api_key:
+            # Fail closed: with no key configured this endpoint would otherwise let
+            # anyone send arbitrary messages using this bot's real credentials.
+            raise HTTPException(status_code=503, detail="REPLY_API_KEY is not configured")
+        if x_api_key != settings.reply_api_key:
             raise HTTPException(status_code=401, detail="Invalid API key")
 
         adapter = active_adapters.get(payload.platform)
