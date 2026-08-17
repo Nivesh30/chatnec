@@ -1,27 +1,38 @@
 """Wire GitHub Copilot CLI up to Slack/Telegram/Teams/WhatsApp/Discord.
 
-There are two different "GitHub Copilot CLI" surfaces — pick the one that
-matches what you have installed:
+Targets the standalone GitHub Copilot CLI agent (`npm install -g
+@github/copilot`, invoked as `copilot`) — a general coding agent comparable
+to Claude Code / Codex CLI. `gh copilot` (the `gh` extension) now delegates
+straight to this same binary on recent `gh` versions rather than being a
+separate, narrower "suggest a shell command" tool, so either entrypoint works
+— check `gh copilot --help` / `gh --version` if you're on an older `gh`.
 
-1. The `gh copilot` extension (`gh extension install github/gh-copilot`) —
-   `gh copilot suggest`/`gh copilot explain`. Narrow: it suggests or explains
-   a single shell command, it isn't a general open-ended coding agent. Only
-   worth wiring up if that's literally the use case you want in chat.
-2. The standalone GitHub Copilot CLI agent (`npm install -g @github/copilot`,
-   invoked as `copilot`) — a general coding agent comparable to Claude Code /
-   Codex CLI, which is what this example targets.
+Flags below verified against `copilot --help` (v0.0.420): -p/--prompt for a
+non-interactive run, --allow-all-tools (required for non-interactive mode —
+without it, a tool call blocks waiting for a permission prompt that never
+comes), and --resume=<sessionId>.
 
-NOTE ON FLAGS: this tool is newer and moves faster than Claude Code's CLI, so
-treat the exact flags below as a starting point, not gospel — run
-`copilot --help` and adjust `build_command`/`parse_output` to match your
-installed version. The shape (non-interactive prompt in, text out, some form
-of session/resume flag for continuity) is the part that's stable; the exact
-flag names are the part to verify.
+Unlike Claude Code (which assigns a session ID and hands it back to you in
+its JSON output), Copilot CLI's --resume doubles as "create": passing a UUID
+that doesn't exist yet starts a new session pinned to that exact ID (see
+`copilot --help`'s "Start a new session with a specific UUID" example). So
+instead of running a message, parsing structured output for a session ID,
+and threading it through, we just generate one UUID the first time we see a
+conversation and pass --resume=<that-uuid> on every turn from then on — no
+output parsing needed for continuity at all.
+
+(--output-format json is available too, but it's JSONL — one JSON object per
+line, i.e. an event stream — not a single result object like Claude Code's.
+Parsing that for anything beyond raw text needs scanning the event stream;
+inspect a real run's output for your installed version before building a
+parser against it.)
 
 SECURITY: like Claude Code, this agent can read/write files and run shell
 commands inside REPO_DIR, triggered by a chat message from anyone who can
 reach your bot. See chatnec.integrations.cli_agent's module docstring.
 """
+import uuid
+
 from chatnec import create_app
 from chatnec.integrations.cli_agent import from_cli_agent
 
@@ -29,18 +40,11 @@ REPO_DIR = "/path/to/your/repo"
 
 
 def build_command(text: str, context: dict) -> list[str]:
-    cmd = ["copilot", "-p", text, "--allow-all-tools"]
-    if session_id := context.get("session_id"):
-        cmd += ["--resume", session_id]
-    return cmd
+    session_id = context.setdefault("session_id", str(uuid.uuid4()))
+    return ["copilot", "-p", text, "--allow-all-tools", f"--resume={session_id}"]
 
 
 def parse_output(output: str, context: dict) -> str:
-    # If your installed version supports structured output (check
-    # `copilot --help` for something like --output-format json) switch this
-    # to json.loads(output) and stash the session id in context, the same
-    # way examples/claude_code_agent.py does — that's what makes --resume
-    # above actually continue the same session on the next message.
     return output.strip() or "(no output)"
 
 

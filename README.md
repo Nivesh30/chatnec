@@ -238,15 +238,20 @@ of starting fresh each message.
 - [Claude Code](python/examples/claude_code_agent.py) — uses `claude -p
   --output-format json` and `--resume <session_id>`
 - [GitHub Copilot CLI](python/examples/github_copilot_cli_agent.py) — the
-  standalone `copilot` agent (not the narrower `gh copilot suggest/explain`,
-  which only suggests/explains a single shell command rather than running
-  open-ended tasks). Flags are less settled than Claude Code's; the example
-  flags where to check `copilot --help` and adjust.
+  standalone `copilot` agent (`gh copilot` now delegates to the same binary
+  on recent `gh` versions). Generates its own session UUID for `--resume`
+  rather than parsing it out of output — see the docs below for why.
 - Plain **GitHub Copilot** (the IDE chat panel) doesn't have a non-interactive
   CLI entrypoint of its own to wire up this way — Copilot CLI above is the
   automatable surface.
 - The same pattern covers Codex CLI or any other prompt-in/text-out coding
   agent — swap the argv and output parsing.
+
+**[docs/cli-agents.md](docs/cli-agents.md)** has full setup for both
+(install, auth, a standalone sanity-check command before wiring it in,
+troubleshooting) — every command and flag on that page was checked against a
+real install while writing it, including exact error messages you might hit
+(e.g. an org policy block on Copilot CLI).
 
 **This is a meaningfully bigger blast radius than a normal agent reply**: a
 chat message becomes a trigger for code execution on whatever machine runs
