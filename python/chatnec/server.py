@@ -19,6 +19,7 @@ from .adapters.base import PlatformAdapter
 from .adapters.discord import DiscordAdapter
 from .adapters.slack import SlackAdapter
 from .adapters.teams import TeamsAdapter
+from .adapters.teams_user import TeamsUserAdapter
 from .adapters.telegram import TelegramAdapter
 from .adapters.whatsapp import WhatsAppAdapter
 from .agent_connector import EmbeddedAgentConnector, HTTPAgentConnector
@@ -197,6 +198,14 @@ def _build_adapters_from_settings() -> dict[str, PlatformAdapter]:
 
     if settings.teams_app_id and settings.teams_app_password:
         adapters["teams"] = TeamsAdapter(settings.teams_app_id, settings.teams_app_password)
+
+    if settings.teams_user_client_id:
+        adapters["teams_user"] = TeamsUserAdapter(
+            settings.teams_user_client_id,
+            settings.teams_user_tenant_id,
+            settings.teams_user_poll_interval_seconds,
+            settings.teams_user_token_cache_path,
+        )
 
     if settings.whatsapp_access_token and settings.whatsapp_phone_number_id:
         adapters["whatsapp"] = WhatsAppAdapter(

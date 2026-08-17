@@ -16,9 +16,16 @@ class Settings(BaseSettings):
     # --- Telegram ---
     telegram_bot_token: Optional[str] = None
 
-    # --- Microsoft Teams (Bot Framework) ---
+    # --- Microsoft Teams (Bot Framework — a separate bot identity added to conversations) ---
     teams_app_id: Optional[str] = None
     teams_app_password: Optional[str] = None
+
+    # --- Microsoft Teams, acting as you (delegated Microsoft Graph — see
+    # adapters/teams_user.py and `chatnec teams-login`) ---
+    teams_user_client_id: Optional[str] = None
+    teams_user_tenant_id: str = "common"
+    teams_user_token_cache_path: Optional[str] = None
+    teams_user_poll_interval_seconds: float = 15.0
 
     # --- WhatsApp (Meta Cloud API) ---
     whatsapp_access_token: Optional[str] = None

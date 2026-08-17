@@ -158,7 +158,8 @@ createAgentServer(async (message) => {
 |---|---|---|---|
 | Slack | Bot token + signing secret | Webhook, HMAC-SHA256 signature (**required**) | Handles the `url_verification` handshake automatically |
 | Telegram | Bot token | Webhook, optional secret token | Includes a `register_webhook()` helper |
-| Teams | Bot Framework app ID/password | Webhook, Bot Framework JWT validated against JWKS | OAuth2 client-credentials token cached for outbound sends |
+| Teams (bot) | Bot Framework app ID/password | Webhook, Bot Framework JWT validated against JWKS | A separate bot identity, added to a chat/channel; OAuth2 client-credentials token cached for outbound sends |
+| Teams (as you) | Delegated Microsoft Graph (device-code login) | Polling (`GET .../messages/delta`) | Acts as your own signed-in identity instead of a bot — see [below](#teams-bot-vs-teams-acting-as-you); `pip install chatnec[teams-user]`, then `chatnec teams-login` once |
 | WhatsApp | Meta Cloud API access token | Webhook, HMAC-SHA256 signature (**required**) + GET handshake | `pip install chatnec` (no extra needed) |
 | Discord | Bot token | Gateway (persistent connection, not a webhook) | `pip install chatnec[discord]`; requires the Message Content privileged intent |
 
@@ -173,6 +174,45 @@ your `.env`.
 
 All outbound sends retry on 429/5xx with exponential backoff (honoring
 `Retry-After`) — see [`chatnec/retry.py`](python/chatnec/retry.py).
+
+## Teams: bot vs. Teams acting as you
+
+Teams has two genuinely different integration models, both available under
+different platform names:
+
+- **`teams`** (`TeamsAdapter`) — a separate bot identity via Azure Bot
+  Service. Someone has to add the bot to a chat or channel; it can only see
+  and send messages there, and every message it sends is visibly from "the
+  bot," not from you.
+- **`teams_user`** (`TeamsUserAdapter`) — acts as *your own* signed-in Teams
+  identity via delegated Microsoft Graph permissions (`Chat.ReadWrite`).
+  Messages it sends look exactly like you sent them, and it can read/reply in
+  any 1:1 or group chat you're already part of — no bot to add anywhere.
+
+Setup for `teams_user`:
+
+1. Register an Azure AD app (Azure Portal → App registrations → New
+   registration). Public client, no client secret needed. Add the
+   `Chat.ReadWrite` and `User.Read` delegated Microsoft Graph permissions.
+   Under Authentication, enable "Allow public client flows."
+2. `pip install chatnec[teams-user]`
+3. Set `TEAMS_USER_CLIENT_ID` (the app registration's Application ID) in
+   `.env`, and `TEAMS_USER_TENANT_ID` if you're not using a personal/`common`
+   account.
+4. Run `chatnec teams-login` once — it prints a URL and a short code, you sign
+   in with it in a browser, and the resulting token (including a refresh
+   token) is cached at `~/.chatnec/msgraph_token_cache.json`. Treat that file
+   like a credential: it's what lets the connector act as you without asking
+   again.
+5. Start the connector as usual. `TeamsUserAdapter` polls
+   `/me/chats/{id}/messages/delta` every `TEAMS_USER_POLL_INTERVAL_SECONDS`
+   (default 15s) for new messages across all your chats, and ignores messages
+   you sent yourself to avoid loops.
+
+`Chat.ReadWrite` may require admin consent depending on your organization's
+tenant policies — if sign-in fails with a consent-related error, that's
+usually the org's Azure AD admin needing to approve the app registration's
+permissions once.
 
 ## Framework examples
 
@@ -193,9 +233,14 @@ misconfigured, rather than silently accepting) is the default posture:
   `SLACK_SIGNING_SECRET` / `WHATSAPP_APP_SECRET` isn't set, that platform's
   webhook rejects every request rather than accepting unverified traffic — you
   won't get a silently-open endpoint from a forgotten env var.
-- **Teams**: JWT validation against the Bot Framework's JWKS is on by default
-  (`verify_jwt=True`); turn it off only for local testing against the Bot
-  Framework Emulator.
+- **Teams (bot)**: JWT validation against the Bot Framework's JWKS is on by
+  default (`verify_jwt=True`); turn it off only for local testing against the
+  Bot Framework Emulator.
+- **Teams (as you)**: the device-code login cache
+  (`~/.chatnec/msgraph_token_cache.json` by default) contains a live refresh
+  token scoped to your account — it's stored outside the repo by default and
+  is never logged, but treat it like any other credential file (file
+  permissions, backups, etc. are on you, same as any OAuth token cache).
 - **`POST /reply`** (for agents pushing replies back asynchronously) requires
   `REPLY_API_KEY` to be set — the endpoint returns `503` until it is, rather
   than accepting unauthenticated requests that could send arbitrary messages
@@ -224,7 +269,7 @@ with exploit details.
 ```
 python/chatnec/
   models.py            UniversalMessage, UniversalReply, AgentHandler
-  adapters/             slack.py, telegram.py, teams.py, whatsapp.py, discord.py, base.py (add new platforms here)
+  adapters/             slack.py, telegram.py, teams.py, teams_user.py, whatsapp.py, discord.py, base.py (add new platforms here)
   agent_connector.py    embedded vs HTTP dispatch to your agent
   server.py             FastAPI app: /webhook/{platform}, /reply, /health, /metrics
   integrations/         from_function (generic), from_langchain_runnable (example)
@@ -232,7 +277,8 @@ python/chatnec/
   retry.py              backoff for outbound platform API calls
   metrics.py            Prometheus-format counters
   logging_config.py     structured JSON logging
-  cli.py                `chatnec init` project scaffolding
+  msgraph_auth.py        MSAL device-code login for Teams-as-you (and future delegated-Graph adapters)
+  cli.py                `chatnec init` project scaffolding, `chatnec teams-login`
 ts-sdk/src/              createAgentServer + ChatConnectorClient for Node agents
 ```
 

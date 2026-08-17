@@ -40,6 +40,12 @@ TELEGRAM_BOT_TOKEN=
 TEAMS_APP_ID=
 TEAMS_APP_PASSWORD=
 
+# Teams, acting as you (delegated Microsoft Graph, not a separate bot) — see
+# the README's Teams section. Run `chatnec teams-login` once after filling in
+# TEAMS_USER_CLIENT_ID.
+TEAMS_USER_CLIENT_ID=
+TEAMS_USER_TENANT_ID=common
+
 # WHATSAPP_APP_SECRET is required, not optional — without it /webhook/whatsapp
 # rejects every request.
 WHATSAPP_ACCESS_TOKEN=
@@ -104,6 +110,27 @@ def init_project(directory: Path) -> None:
     print(f"\nDone. Next steps:\n  cd {directory}\n  cp .env.example .env  # fill in credentials\n  pip install chatnec\n  uvicorn app:app --reload")
 
 
+def teams_login() -> int:
+    """Interactive one-time sign-in for TeamsUserAdapter (acts as you via
+    delegated Microsoft Graph permissions, see adapters/teams_user.py).
+    Reads TEAMS_USER_CLIENT_ID / TEAMS_USER_TENANT_ID from the environment.
+    """
+    from .config import settings
+    from .msgraph_auth import device_code_login
+
+    if not settings.teams_user_client_id:
+        print("Set TEAMS_USER_CLIENT_ID (in .env or the environment) first — see the README's Teams section.")
+        return 1
+
+    device_code_login(
+        settings.teams_user_client_id,
+        settings.teams_user_tenant_id,
+        ["Chat.ReadWrite", "User.Read"],
+        settings.teams_user_token_cache_path,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="chatnec")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -111,11 +138,19 @@ def main(argv: list[str] | None = None) -> int:
     init_parser = subparsers.add_parser("init", help="Scaffold a new chatnec agent project")
     init_parser.add_argument("directory", nargs="?", default=".", help="Target directory (default: current directory)")
 
+    subparsers.add_parser(
+        "teams-login",
+        help="Sign in to Microsoft Teams as yourself (delegated Graph permissions, for TeamsUserAdapter)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "init":
         init_project(Path(args.directory))
         return 0
+
+    if args.command == "teams-login":
+        return teams_login()
 
     return 1
 

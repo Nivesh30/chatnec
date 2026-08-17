@@ -23,7 +23,7 @@ Steps 2–4 and 6 are platform-specific (one file per platform in
 `chatnec/adapters/`); step 5 is platform-agnostic and is the only place your
 agent code touches the system.
 
-## Message flow — push platforms (Discord)
+## Message flow — push platforms (Discord, Teams-as-you)
 
 Discord has no inbound webhook for regular channel messages — only a
 persistent Gateway (WebSocket) connection delivers those. Adapters for
@@ -34,25 +34,44 @@ platforms like this set `is_push_adapter = True` and implement
 1. On app startup, the server calls adapter.start_listening(handle) as a
    background task for every push adapter (handle == AgentConnector.handle,
    wrapped to also call send_message on the reply)
-2. The adapter opens its own connection (Discord: a discord.py Gateway client)
-   and for each inbound event builds a UniversalMessage, then calls handle(msg)
+2. The adapter drives its own message source and for each inbound message
+   builds a UniversalMessage, then calls handle(msg)
 3. On shutdown, the server calls adapter.stop_listening() and cancels the task
 ```
 
-This keeps the platform-specific transport (webhook vs. persistent
-connection) fully inside the adapter — `AgentConnector` and your agent code
+Same interface, two different message sources inside step 2:
+
+- **`DiscordAdapter`**: opens a persistent Gateway (WebSocket) connection via
+  discord.py and reacts to `on_message` events as they arrive.
+- **`TeamsUserAdapter`**: no persistent connection or webhook fits Microsoft
+  Graph's delegated-access model well, so it polls instead — every
+  `poll_interval_seconds` it lists `/me/chats`, then for each chat calls
+  `/chats/{id}/messages/delta` with the deltaLink saved from the previous
+  poll (Graph's change-tracking mechanism, so each poll only returns messages
+  since the last one, not the whole chat again). The very first poll for a
+  chat is treated as priming: it captures a baseline deltaLink but doesn't
+  dispatch anything, so restarting the connector doesn't replay a chat's
+  entire history through your agent. Messages authored by the signed-in
+  user themselves are filtered out to avoid echo loops, mirroring how
+  `SlackAdapter`/`DiscordAdapter` ignore their own bot's messages.
+
+This keeps the platform-specific transport (webhook vs. persistent connection
+vs. polling) fully inside the adapter — `AgentConnector` and your agent code
 never know the difference.
 
 ## Why a normalized message instead of per-platform webhooks
 
-Slack, Telegram, Teams, WhatsApp, and Discord each have distinct event
-payloads, auth schemes (HMAC signature vs. bot API secret token vs. Bot
-Framework JWT vs. Gateway session), and reply APIs (`chat.postMessage`,
-`sendMessage`, Bot Framework Connector activities, the Cloud API, Discord's
-REST API). An agent that wants to run on all of them either reimplements this
-five times, or is coupled to one platform's SDK. `UniversalMessage` /
-`UniversalReply` (`chatnec/models.py`) exist so an agent is written once
-against one schema.
+Slack, Telegram, Teams (bot), Teams (as you), WhatsApp, and Discord each have
+distinct event payloads, auth schemes (HMAC signature vs. bot API secret
+token vs. Bot Framework JWT vs. delegated OAuth2/MSAL vs. Gateway session),
+and reply APIs (`chat.postMessage`, `sendMessage`, Bot Framework Connector
+activities, Microsoft Graph, the Cloud API, Discord's REST API). An agent
+that wants to run on all of them either reimplements this six times, or is
+coupled to one platform's SDK. `UniversalMessage` / `UniversalReply`
+(`chatnec/models.py`) exist so an agent is written once against one schema —
+notably, `TeamsUserAdapter` proves the abstraction holds even for a
+fundamentally different access model (acting as a user rather than as a bot):
+the agent code is identical either way.
 
 ## Two integration modes
 
