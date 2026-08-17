@@ -26,6 +26,7 @@
 - [Quickstart — any language, HTTP mode](#quickstart--any-language-http-mode)
 - [Platform support](#platform-support)
 - [Framework examples](#framework-examples)
+- [CLI coding agents](#cli-coding-agents-claude-code-github-copilot-cli)
 - [Security](#security)
 - [Production](#production)
 - [Layout](#layout)
@@ -223,6 +224,37 @@ Same five-line pattern for any framework — call it, return text:
 - [AutoGen](python/examples/autogen_agent.py)
 - [OpenAI Assistants](python/examples/openai_assistants_agent.py)
 
+## CLI coding agents (Claude Code, GitHub Copilot CLI, ...)
+
+Claude Code, GitHub Copilot CLI, and similar tools aren't importable Python
+objects — you run them as a subprocess with a prompt and read the reply from
+stdout. [`from_cli_agent`](python/chatnec/integrations/cli_agent.py) wraps
+that shape: you supply a `command(text, context) -> argv` function to build
+the command line for one turn, and an `output_parser(output, context) -> str`
+that can stash a session/resume ID in `context` — chatnec's per-conversation
+state — so a chat thread continues the same CLI session turn to turn instead
+of starting fresh each message.
+
+- [Claude Code](python/examples/claude_code_agent.py) — uses `claude -p
+  --output-format json` and `--resume <session_id>`
+- [GitHub Copilot CLI](python/examples/github_copilot_cli_agent.py) — the
+  standalone `copilot` agent (not the narrower `gh copilot suggest/explain`,
+  which only suggests/explains a single shell command rather than running
+  open-ended tasks). Flags are less settled than Claude Code's; the example
+  flags where to check `copilot --help` and adjust.
+- Plain **GitHub Copilot** (the IDE chat panel) doesn't have a non-interactive
+  CLI entrypoint of its own to wire up this way — Copilot CLI above is the
+  automatable surface.
+- The same pattern covers Codex CLI or any other prompt-in/text-out coding
+  agent — swap the argv and output parsing.
+
+**This is a meaningfully bigger blast radius than a normal agent reply**: a
+chat message becomes a trigger for code execution on whatever machine runs
+the connector. Scope the working directory to a repo you're comfortable an
+external chat message could affect, restrict who can reach the webhook, and
+prefer a low-privilege container/VM over your main machine — see the module
+docstring in `cli_agent.py` and the [Security](#security) section below.
+
 ## Security
 
 Every inbound webhook drives your agent and can trigger an outbound send using
@@ -245,6 +277,13 @@ misconfigured, rather than silently accepting) is the default posture:
   `REPLY_API_KEY` to be set — the endpoint returns `503` until it is, rather
   than accepting unauthenticated requests that could send arbitrary messages
   as your bot.
+- **CLI coding agents** (`from_cli_agent` — Claude Code, Copilot CLI, etc.)
+  are a different risk category from the rest of chatnec: a verified webhook
+  only proves the message came from the real platform, not that whoever sent
+  it should be allowed to trigger code execution on your machine. If you wire
+  one of these up, add your own authorization check (e.g. only act on
+  messages from specific `user_id`s) before invoking the CLI agent — chatnec
+  doesn't do this for you, since it doesn't know your intended trust model.
 
 If you find a security issue, please open an issue rather than a public PR
 with exploit details.
@@ -272,7 +311,7 @@ python/chatnec/
   adapters/             slack.py, telegram.py, teams.py, teams_user.py, whatsapp.py, discord.py, base.py (add new platforms here)
   agent_connector.py    embedded vs HTTP dispatch to your agent
   server.py             FastAPI app: /webhook/{platform}, /reply, /health, /metrics
-  integrations/         from_function (generic), from_langchain_runnable (example)
+  integrations/         from_function (generic), from_cli_agent (Claude Code/Copilot CLI/etc.), from_langchain_runnable (example)
   session.py            per-conversation state (in-memory or Redis)
   retry.py              backoff for outbound platform API calls
   metrics.py            Prometheus-format counters
