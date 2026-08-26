@@ -1,13 +1,24 @@
 [← back to README](../README.md)
 
-# CLI coding agents: Claude Code & GitHub Copilot CLI
+# CLI coding agents: Claude Code, GitHub Copilot CLI & Codex CLI
 
 Setup for wiring [`from_cli_agent`](../python/chatnec/integrations/cli_agent.py)
-up to Claude Code and GitHub Copilot CLI — the two examples that ship in
-[`python/examples/`](../python/examples/). The commands and flags on this
-page were checked against a real install of each tool while writing it
-(versions noted below); if your installed version differs, `<tool> --help`
-is the source of truth, not this page.
+up to Claude Code, GitHub Copilot CLI, and Codex CLI — the three examples
+that ship in [`python/examples/`](../python/examples/). The commands and
+flags on this page were checked against a real install of each tool while
+writing it (versions noted below, with one exception noted in the Codex CLI
+section); if your installed version differs, `<tool> --help` is the source
+of truth, not this page.
+
+> **"GitHub CLI" vs. "GitHub Copilot CLI"**: plain `gh` (the GitHub CLI) is
+> not a coding agent — it has no non-interactive "give it a prompt, get a
+> reply" mode, so there's nothing for `from_cli_agent` to wrap. What's
+> covered below is **GitHub Copilot CLI** (`copilot`, or `gh copilot` on a
+> recent `gh`), the actual agent. If you meant `gh` itself — e.g. having an
+> agent run `gh pr create` as one of its tools — that's a capability you'd
+> grant the agent (Claude Code, Copilot CLI, or Codex CLI can all shell out
+> to `gh` on their own if it's installed and authenticated in the
+> connector's environment), not a separate `from_cli_agent` integration.
 
 > **Before anything else, read the security note.** Wiring either of these
 > up means a chat message can trigger code execution on whatever machine
@@ -108,9 +119,70 @@ cd python
 uvicorn examples.github_copilot_cli_agent:app --reload
 ```
 
+## Codex CLI
+
+Verified against `codex-cli` v0.149.1's `--help` output (`codex exec --help`,
+`codex exec resume --help`). This environment has no OpenAI credentials to
+run a live `codex exec` and capture real output — unlike the two sections
+above, the `--json` event shapes below are sourced from
+[OpenAI's own non-interactive-mode docs](https://developers.openai.com/codex/noninteractive),
+not a captured transcript, so double-check them against your own
+`codex exec --json '...'` output before relying on this in production.
+
+**Install & auth** — `npm install -g @openai/codex`, then run `codex login`
+(or run `codex` once interactively) to sign in.
+
+**Verify it works standalone** before wiring it into chatnec:
+
+```bash
+codex exec --json "What is 2+2? Answer with just the number."
+```
+
+With `--json`, stdout is JSONL (one JSON object per line) rather than a
+single result object like Claude Code's. Two event types matter here:
+
+```json
+{"type":"thread.started","thread_id":"<uuid>"}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"4"}}
+```
+
+`thread_id` from `thread.started` is what you pass back in to continue the
+same session; the final reply text is the `text` field of the
+`item.completed` event whose `item.type` is `"agent_message"` (other item
+types cover command execution, file changes, MCP calls, etc. — skip those).
+
+Resuming a session takes the thread ID as a positional argument, not a flag:
+
+```bash
+codex exec resume <thread_id> --json "follow-up question"
+```
+
+**Wire it in** — [`examples/codex_cli_agent.py`](../python/examples/codex_cli_agent.py)
+does exactly the above: builds `codex exec --json <text>` for a new
+conversation, switches to `codex exec resume <thread_id> --json <text>` once
+a `thread_id` has been captured, and scans the JSONL output for
+`thread.started` / `item.completed` events. Edit `REPO_DIR` to point at the
+repo you want it operating on, then:
+
+```bash
+cd python
+uvicorn examples.codex_cli_agent:app --reload
+```
+
+**Sandboxing**: unlike Copilot CLI (which needs an explicit
+`--allow-all-tools` flag to avoid blocking on a permission prompt), Codex's
+`exec` mode doesn't stop for interactive approval at all — it runs
+model-generated shell commands directly within whatever `--sandbox` policy
+is in effect (`workspace-write` by default; `read-only` or
+`danger-full-access` are the other options, and
+`--dangerously-bypass-approvals-and-sandbox` removes the sandbox entirely).
+That default is more permissive than Claude Code's, which does prompt for
+tool approval outside `-p`/print mode — worth knowing given the Security
+note at the top of this page.
+
 ## Testing your wiring without a real chat platform
 
-Both examples build a normal chatnec `app`, so the same pattern from
+All three examples build a normal chatnec `app`, so the same pattern from
 [`docs/demo.md`](demo.md) applies — swap in a `DemoPlatformAdapter` instead
 of pointing a real webhook at it, and drive it with `curl`:
 
@@ -141,12 +213,12 @@ curl -X POST http://127.0.0.1:8123/webhook/demo \
   -d '{"chat_id":"c1","text":"What does this repo do?"}'
 ```
 
-## Other CLI agents (Codex CLI, etc.)
+## Other CLI agents
 
-Same recipe: check `<tool> --help` for its non-interactive prompt flag and
-its session/resume mechanism, write a `build_command`/`parse_output` pair
-following the two examples above, and pass them to `from_cli_agent`. The
-things worth checking for any new one:
+Same recipe as the three above: check `<tool> --help` for its non-interactive
+prompt flag and its session/resume mechanism, write a `build_command`/
+`parse_output` pair, and pass them to `from_cli_agent`. The things worth
+checking for any new one:
 
 - What's the non-interactive/print-mode flag (usually `-p`)?
 - Does it need an explicit "allow tools without prompting" flag to actually
