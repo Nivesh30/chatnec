@@ -26,7 +26,7 @@
 - [Quickstart — any language, HTTP mode](#quickstart--any-language-http-mode)
 - [Platform support](#platform-support)
 - [Framework examples](#framework-examples)
-- [CLI coding agents](#cli-coding-agents-claude-code-github-copilot-cli)
+- [CLI coding agents](#cli-coding-agents-claude-code-github-copilot-cli-codex-cli)
 - [Security](#security)
 - [Production](#production)
 - [Layout](#layout)
@@ -224,13 +224,13 @@ Same five-line pattern for any framework — call it, return text:
 - [AutoGen](python/examples/autogen_agent.py)
 - [OpenAI Assistants](python/examples/openai_assistants_agent.py)
 
-## CLI coding agents (Claude Code, GitHub Copilot CLI, ...)
+## CLI coding agents (Claude Code, GitHub Copilot CLI, Codex CLI)
 
-Claude Code, GitHub Copilot CLI, and similar tools aren't importable Python
-objects — you run them as a subprocess with a prompt and read the reply from
-stdout. [`from_cli_agent`](python/chatnec/integrations/cli_agent.py) wraps
-that shape: you supply a `command(text, context) -> argv` function to build
-the command line for one turn, and an `output_parser(output, context) -> str`
+Claude Code, GitHub Copilot CLI, Codex CLI, and similar tools aren't
+importable Python objects — you run them as a subprocess with a prompt and
+read the reply from stdout. [`from_cli_agent`](python/chatnec/integrations/cli_agent.py)
+wraps that shape: you supply a `command(text, context) -> argv` function to
+build the command line for one turn, and an `output_parser(output, context) -> str`
 that can stash a session/resume ID in `context` — chatnec's per-conversation
 state — so a chat thread continues the same CLI session turn to turn instead
 of starting fresh each message.
@@ -241,13 +241,18 @@ of starting fresh each message.
   standalone `copilot` agent (`gh copilot` now delegates to the same binary
   on recent `gh` versions). Generates its own session UUID for `--resume`
   rather than parsing it out of output — see the docs below for why.
-- Plain **GitHub Copilot** (the IDE chat panel) doesn't have a non-interactive
-  CLI entrypoint of its own to wire up this way — Copilot CLI above is the
-  automatable surface.
-- The same pattern covers Codex CLI or any other prompt-in/text-out coding
-  agent — swap the argv and output parsing.
+- [Codex CLI](python/examples/codex_cli_agent.py) — uses `codex exec --json`
+  and `codex exec resume <thread_id> --json`, scanning the JSONL event
+  stream for the `thread_id` and the final `agent_message` text.
+- Plain **GitHub Copilot** (the IDE chat panel) and plain **GitHub CLI**
+  (`gh`) don't have a non-interactive "prompt in, reply out" entrypoint of
+  their own to wire up this way — Copilot CLI above is the automatable
+  Copilot surface, and `gh` is a tool the agents above can shell out to
+  themselves, not a separate agent to integrate.
+- The same pattern covers any other prompt-in/text-out coding agent — swap
+  the argv and output parsing.
 
-**[docs/cli-agents.md](docs/cli-agents.md)** has full setup for both
+**[docs/cli-agents.md](docs/cli-agents.md)** has full setup for all three
 (install, auth, a standalone sanity-check command before wiring it in,
 troubleshooting) — every command and flag on that page was checked against a
 real install while writing it, including exact error messages you might hit
@@ -316,7 +321,7 @@ python/chatnec/
   adapters/             slack.py, telegram.py, teams.py, teams_user.py, whatsapp.py, discord.py, base.py (add new platforms here)
   agent_connector.py    embedded vs HTTP dispatch to your agent
   server.py             FastAPI app: /webhook/{platform}, /reply, /health, /metrics
-  integrations/         from_function (generic), from_cli_agent (Claude Code/Copilot CLI/etc.), from_langchain_runnable (example)
+  integrations/         from_function (generic), from_cli_agent (Claude Code/Copilot CLI/Codex CLI/etc.), from_langchain_runnable (example)
   session.py            per-conversation state (in-memory or Redis)
   retry.py              backoff for outbound platform API calls
   metrics.py            Prometheus-format counters
